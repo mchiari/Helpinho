@@ -1,14 +1,13 @@
-# "org" ensures this Service is used with the correct Serverless Framework Access Key.
 org: mchiaridev
-# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
 app: helpinho
-# "service" is the name of this project. This will also be added to your AWS resource names.
 service: helpinho
 
 stages:
   default:
     params:
-      tableName: "users-table-${sls:stage}"
+      usersTableName: "users-table-${sls:stage}"
+      requestsTableName: "requests-table-${sls:stage}"
+      helpsTableName: "helps-table-${sls:stage}"
 
 provider:
   name: aws
@@ -26,20 +25,75 @@ provider:
             - dynamodb:DeleteItem
           Resource:
             - Fn::GetAtt: [UsersTable, Arn]
+            - Fn::GetAtt: [RequestsTable, Arn]
+            - Fn::Sub: "${RequestsTable.Arn}/index/UserIndex"
+            - Fn::GetAtt: [HelpsTable, Arn]
+            - Fn::Sub: "${HelpsTable.Arn}/index/RequestIndex"
   environment:
-    USERS_TABLE: ${param:tableName}
+    USERS_TABLE: users-table-${sls:stage}
+    REQUESTS_TABLE: requests-table-${sls:stage}
+    HELPS_TABLE: helps-table-${sls:stage}
+
 
 functions:
-  api:
-    handler: handler.handler
+  users:
+    handler: server.handler
     events:
-      - httpApi: "*"
+      - http:
+          path: users
+          method: post
+          description: Creates user
+      - http:
+          path: users/{userId}
+          method: get
+          description: Retrieves user
+      - http:
+          path: users/{userId}
+          method: put
+          description: Update user
+      - http:
+          path: users/{userId}
+          method: delete
+          description: Delete user
+
+  requests:
+    handler: server.handler
+    events:
+      - http:
+          path: requests
+          method: get
+          description: Get all requests
+      - http:
+          path: requests/{requestId}
+          method: get
+          description: Get request by id
+      - http:
+          path: requests
+          method: post
+          description: Create request
+      - http:
+          path: requests/user/{userId}
+          method: get
+          description: Get requests by userId
+
+  helps:
+    handler: server.handler
+    events:
+      - http:
+          path: helps/{requestId}
+          method: get
+          description: Get helps by requestId
+      - http:
+          path: helps
+          method: post
+          description: Create help
 
 resources:
   Resources:
     UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
+        TableName: users-table-${sls:stage}
         AttributeDefinitions:
           - AttributeName: userId
             AttributeType: S
@@ -47,4 +101,45 @@ resources:
           - AttributeName: userId
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
-        TableName: ${param:tableName}
+
+    RequestsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: requests-table-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: requestId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: requestId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: UserIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    HelpsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: helps-table-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: helpId
+            AttributeType: S
+          - AttributeName: requestId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: helpId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: RequestIndex
+            KeySchema:
+              - AttributeName: requestId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
