@@ -1,4 +1,10 @@
 const express = require("express");
+const AWS = require("aws-sdk");
+const sqs = new AWS.SQS({
+  apiVersion: "latest",
+  region: process.env.AWS_REGION,
+});
+
 const { v4: uuidv4 } = require("uuid");
 const {
   DynamoDBClient,
@@ -10,10 +16,12 @@ const {
   GetCommand,
   PutCommand,
 } = require("@aws-sdk/lib-dynamodb");
+
 const { prepareScanResultsArrayForPresentation } = require("./utils");
 
 const REQUESTS_TABLE = process.env.REQUESTS_TABLE;
 const USERS_TABLE = process.env.USERS_TABLE;
+const CREATE_REQUEST_QUEUE_URL = process.env.CREATE_REQUEST_QUEUE_URL;
 const client = new DynamoDBClient();
 const docClient = DynamoDBDocumentClient.from(client);
 const requestsRouter = express.Router();
@@ -57,7 +65,7 @@ requestsRouter.get("/user/:userId", async (req, res) => {
       IndexName: "UserIndex",
       KeyConditionExpression: "userId = :userId",
       ExpressionAttributeValues: {
-        ":userId": {"S": userId},
+        ":userId": { S: userId },
       },
       Limit: limit ? parseInt(limit, 10) : 10,
     };
@@ -69,7 +77,9 @@ requestsRouter.get("/user/:userId", async (req, res) => {
     const command = new QueryCommand(params);
     const { Items, LastEvaluatedKey } = await docClient.send(command);
     if (Items && Items.length > 0) {
-        const items = Items.map(item => prepareScanResultsArrayForPresentation(item));
+      const items = Items.map((item) =>
+        prepareScanResultsArrayForPresentation(item)
+      );
       res.json({ items, LastEvaluatedKey });
     } else {
       res.status(404).json({ error: "No requests found for provided userId" });
@@ -148,22 +158,18 @@ requestsRouter.post("/", async (req, res) => {
   };
 
   try {
-    const command = new PutCommand(params);
-    await docClient.send(command);
-    res.json({
-      requestId,
-      userId,
-      title,
-      description,
-      image,
-      goal,
-      category,
-      priority,
-      message: "Help request created successfully",
-    });
+    await sqs
+      .sendMessage({
+        QueueUrl: CREATE_REQUEST_QUEUE_URL,
+        MessageBody: JSON.stringify({
+          params,
+        }),
+      })
+      .promise();
+    return res.status(200).json(requestId);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Could not create help request" });
+    console.error("Error sending message to SQS:", error);
+    return res.status(500).json({ error: "Failed to send message" });
   }
 });
 

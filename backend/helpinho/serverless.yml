@@ -2,6 +2,10 @@ org: mchiaridev
 app: helpinho
 service: helpinho
 
+plugins:
+    - serverless-lift
+
+# criaçao de parametros para utilizacao no template
 stages:
   default:
     params:
@@ -29,12 +33,28 @@ provider:
             - Fn::Sub: "${RequestsTable.Arn}/index/UserIndex"
             - Fn::GetAtt: [HelpsTable, Arn]
             - Fn::Sub: "${HelpsTable.Arn}/index/RequestIndex"
+
+
   environment:
-    USERS_TABLE: users-table-${sls:stage}
-    REQUESTS_TABLE: requests-table-${sls:stage}
-    HELPS_TABLE: helps-table-${sls:stage}
+    USERS_TABLE: ${param:usersTableName}
+    REQUESTS_TABLE: ${param:requestsTableName}
+    HELPS_TABLE: ${param:helpsTableName}
+    CREATE_REQUEST_QUEUE_URL: ${construct:createRequestQueue.queueUrl}
+    CREATE_HELP_QUEUE_URL: ${construct:createHelpQueue.queueUrl}
 
+# lift plugin constructs
+constructs:
+  createRequestQueue:
+    type: queue
+    worker:
+      handler: worker.handler
 
+  createHelpQueue:
+    type: queue
+    worker:
+      handler: worker.handler
+
+# lambda functions
 functions:
   users:
     handler: server.handler
@@ -88,12 +108,13 @@ functions:
           method: post
           description: Create help
 
+#resources outside lift
 resources:
   Resources:
     UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: users-table-${sls:stage}
+        TableName: ${param:usersTableName}
         AttributeDefinitions:
           - AttributeName: userId
             AttributeType: S
@@ -105,7 +126,7 @@ resources:
     RequestsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: requests-table-${sls:stage}
+        TableName: ${param:requestsTableName}
         AttributeDefinitions:
           - AttributeName: requestId
             AttributeType: S
@@ -126,7 +147,7 @@ resources:
     HelpsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: helps-table-${sls:stage}
+        TableName: ${param:helpsTableName}
         AttributeDefinitions:
           - AttributeName: helpId
             AttributeType: S

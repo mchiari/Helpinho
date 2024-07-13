@@ -1,4 +1,10 @@
 const express = require("express");
+const AWS = require("aws-sdk");
+const sqs = new AWS.SQS({
+  apiVersion: "latest",
+  region: process.env.AWS_REGION,
+});
+
 const { v4: uuidv4 } = require("uuid");
 const {
   DynamoDBClient,
@@ -14,6 +20,7 @@ const { prepareScanResultsArrayForPresentation } = require("./utils");
 
 const REQUESTS_TABLE = process.env.REQUESTS_TABLE;
 const USERS_TABLE = process.env.USERS_TABLE;
+const CREATE_HELP_QUEUE_URL = process.env.CREATE_HELP_QUEUE_URL;
 const HELPS_TABLE = process.env.HELPS_TABLE;
 const client = new DynamoDBClient();
 const docClient = DynamoDBDocumentClient.from(client);
@@ -81,18 +88,18 @@ helpsRouter.post("/", async (req, res) => {
   };
 
   try {
-    const command = new PutCommand(params);
-    await docClient.send(command);
-    res.json({
-      requestId,
-      value,
-      helperId,
-      helpId: newHelpId,
-      message: "Help created successfully",
-    });
+    await sqs
+      .sendMessage({
+        QueueUrl: CREATE_HELP_QUEUE_URL,
+        MessageBody: JSON.stringify({
+          params,
+        }),
+      })
+      .promise();
+    return res.status(200).json(newHelpId);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Could not fulfill help" });
+    console.error("Error sending message to SQS:", error);
+    return res.status(500).json({ error: "Failed to send message" });
   }
 });
 
