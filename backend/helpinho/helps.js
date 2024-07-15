@@ -1,10 +1,5 @@
 const express = require("express");
-const AWS = require("aws-sdk");
-const sqs = new AWS.SQS({
-  apiVersion: "latest",
-  region: process.env.AWS_REGION,
-});
-
+const { SNSClient, PublishCommand } = require("@aws-sdk/client-sns");
 const { v4: uuidv4 } = require("uuid");
 const {
   DynamoDBClient,
@@ -22,9 +17,11 @@ const REQUESTS_TABLE = process.env.REQUESTS_TABLE;
 const USERS_TABLE = process.env.USERS_TABLE;
 const CREATE_HELP_QUEUE_URL = process.env.CREATE_HELP_QUEUE_URL;
 const HELPS_TABLE = process.env.HELPS_TABLE;
+
 const client = new DynamoDBClient();
 const docClient = DynamoDBDocumentClient.from(client);
 const helpsRouter = express.Router();
+const snsClient = new SNSClient();
 
 helpsRouter.get("/:requestId", async (req, res) => {
   const { requestId } = req.params;
@@ -86,16 +83,14 @@ helpsRouter.post("/", async (req, res) => {
     TableName: HELPS_TABLE,
     Item: { requestId, value, helperId, helpId: newHelpId },
   };
+  
+  const snsCommand = new PublishCommand({
+    TopicArn: process.env.HELPS_SNS_TOPIC_ARN,
+    MessageGroupId:  requestId,
+    Message: JSON.stringify(params)});
 
   try {
-    await sqs
-      .sendMessage({
-        QueueUrl: CREATE_HELP_QUEUE_URL,
-        MessageBody: JSON.stringify({
-          params,
-        }),
-      })
-      .promise();
+    await snsClient.send(snsCommand)
     return res.status(200).json(newHelpId);
   } catch (error) {
     console.error("Error sending message to SQS:", error);

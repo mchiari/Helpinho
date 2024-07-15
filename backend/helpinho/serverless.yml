@@ -2,10 +2,13 @@ org: mchiaridev
 app: helpinho
 service: helpinho
 
+package:
+  exclude:
+    - node_modules/**
+
 plugins:
     - serverless-lift
 
-# criaçao de parametros para utilizacao no template
 stages:
   default:
     params:
@@ -21,41 +24,58 @@ provider:
       statements:
         - Effect: Allow
           Action:
-            - dynamodb:Query
-            - dynamodb:Scan
-            - dynamodb:GetItem
-            - dynamodb:PutItem
-            - dynamodb:UpdateItem
-            - dynamodb:DeleteItem
-          Resource:
-            - Fn::GetAtt: [UsersTable, Arn]
-            - Fn::GetAtt: [RequestsTable, Arn]
-            - Fn::Sub: "${RequestsTable.Arn}/index/UserIndex"
-            - Fn::GetAtt: [HelpsTable, Arn]
-            - Fn::Sub: "${HelpsTable.Arn}/index/RequestIndex"
-
+            - dynamodb:*
+            - sns:*
+            - sqs:*
+          Resource: 
+                - "*"
 
   environment:
     USERS_TABLE: ${param:usersTableName}
     REQUESTS_TABLE: ${param:requestsTableName}
     HELPS_TABLE: ${param:helpsTableName}
-    CREATE_REQUEST_QUEUE_URL: ${construct:createRequestQueue.queueUrl}
-    CREATE_HELP_QUEUE_URL: ${construct:createHelpQueue.queueUrl}
+    REQUESTS_SNS_TOPIC_ARN: 
+      Ref: RequestsTopic
+    HELPS_SNS_TOPIC_ARN: 
+      Ref: RequestsTopic
+    # CREATE_REQUEST_QUEUE_URL: ${construct:createRequestQueue.queueUrl}
+    # CREATE_HELP_QUEUE_URL: ${construct:createHelpQueue.queueUrl}
 
 # lift plugin constructs
-constructs:
-  createRequestQueue:
-    type: queue
-    worker:
-      handler: worker.handler
+# constructs:
+#   createRequestQueue:
+#     type: queue
+#     alarm: chiarimatheus@gmail.com
+#     worker:
+#       handler: worker.handler
 
-  createHelpQueue:
-    type: queue
-    worker:
-      handler: worker.handler
+#   createHelpQueue:
+#     type: queue
+#     worker:
+#       handler: worker.handler
 
 # lambda functions
 functions:
+  processor:
+    handler: processor.handler
+    events:
+      - sqs:
+          arn: 
+            Fn::GetAtt:
+              - RequestsQueue
+              - Arn
+          batchSize: 5
+
+  dlqProcessor:
+    handler: processor.handler
+    events:
+      - sqs:
+          arn: 
+            Fn::GetAtt:
+              - RequestsQueue
+              - Arn
+          batchSize: 5
+
   users:
     handler: server.handler
     events:
@@ -108,7 +128,6 @@ functions:
           method: post
           description: Create help
 
-#resources outside lift
 resources:
   Resources:
     UsersTable:
@@ -164,3 +183,139 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+
+    RequestsTopic:
+      Type: "AWS::SNS::Topic"
+      Properties:
+        TopicName: "RequestsTopic.fifo"
+        FifoTopic: true
+        ContentBasedDeduplication: true
+
+    RequestsQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "RequestsQueue.fifo"
+        FifoQueue: true
+        ContentBasedDeduplication: true
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - RequestsQueueDLQ
+              - Arn
+          maxReceiveCount: 3
+
+    RequestsQueueDLQ:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "RequestsQueueDLQ.fifo"
+        FifoQueue: true
+        ContentBasedDeduplication: true
+
+    RequestsQueueSubscription: 
+      Type: 'AWS::SNS::Subscription'
+      Properties:
+        TopicArn: 
+          Fn::Join:
+              - ':'
+              - - 'arn:aws:sns'
+                - Ref: 'AWS::Region'
+                - Ref: 'AWS::AccountId'
+                - 'RequestsTopic.fifo'
+        Endpoint: 
+          Fn::GetAtt:
+          - RequestsQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: true
+
+    SnsToRequestsQueueSQSPolicy:
+      Type: "AWS::SQS::QueuePolicy"
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: "Allow"
+              Principal:
+                Service:
+                  - "sns.amazonaws.com"
+              Resource: 
+                Fn::GetAtt:
+                  - RequestsQueue
+                  - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": 
+                    Ref: RequestsTopic
+        Queues:
+          - Ref: RequestsQueue
+
+
+
+    HelpsTopic:
+      Type: "AWS::SNS::Topic"
+      Properties:
+        TopicName: "HelpsTopic.fifo"
+        FifoTopic: true
+        ContentBasedDeduplication: true
+
+    HelpsQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "HelpsQueue.fifo"
+        FifoQueue: true
+        ContentBasedDeduplication: true
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - HelpsQueueDLQ
+              - Arn
+          maxReceiveCount: 3
+
+    HelpsQueueDLQ:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "HelpsQueueDLQ.fifo"
+        FifoQueue: true
+        ContentBasedDeduplication: true
+
+    HelpsQueueSubscription: 
+      Type: 'AWS::SNS::Subscription'
+      Properties:
+        TopicArn: 
+          Fn::Join:
+              - ':'
+              - - 'arn:aws:sns'
+                - Ref: 'AWS::Region'
+                - Ref: 'AWS::AccountId'
+                - 'HelpsTopic.fifo'
+        Endpoint: 
+          Fn::GetAtt:
+          - HelpsQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: true
+
+    SnsToHelpsQueueSQSPolicy:
+      Type: "AWS::SQS::QueuePolicy"
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: "Allow"
+              Principal:
+                Service:
+                  - "sns.amazonaws.com"
+              Resource: 
+                Fn::GetAtt:
+                  - HelpsQueue
+                  - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": 
+                    Ref: HelpsTopic
+        Queues:
+          - Ref: HelpsQueue

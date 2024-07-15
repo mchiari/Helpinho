@@ -4,7 +4,7 @@
   "description": "",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.585.0",
-    "@aws-sdk/client-sns": "^3.609.0",
+    "@aws-sdk/client-sns": "^3.614.0",
     "@aws-sdk/client-sqs": "^3.609.0",
     "@aws-sdk/lib-dynamodb": "^3.585.0",
     "express": "^4.19.2",

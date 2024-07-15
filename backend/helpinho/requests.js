@@ -1,9 +1,5 @@
 const express = require("express");
-const AWS = require("aws-sdk");
-const sqs = new AWS.SQS({
-  apiVersion: "latest",
-  region: process.env.AWS_REGION,
-});
+const { SNSClient, PublishCommand } = require("@aws-sdk/client-sns");
 
 const { v4: uuidv4 } = require("uuid");
 const {
@@ -16,15 +12,17 @@ const {
   GetCommand,
   PutCommand,
 } = require("@aws-sdk/lib-dynamodb");
-
 const { prepareScanResultsArrayForPresentation } = require("./utils");
+
+const requestsRouter = express.Router();
 
 const REQUESTS_TABLE = process.env.REQUESTS_TABLE;
 const USERS_TABLE = process.env.USERS_TABLE;
 const CREATE_REQUEST_QUEUE_URL = process.env.CREATE_REQUEST_QUEUE_URL;
+
 const client = new DynamoDBClient();
 const docClient = DynamoDBDocumentClient.from(client);
-const requestsRouter = express.Router();
+const snsClient = new SNSClient();
 
 requestsRouter.get("/", async (req, res) => {
   const { limit, lastKey } = req.query;
@@ -157,18 +155,16 @@ requestsRouter.post("/", async (req, res) => {
     },
   };
 
+  const snsCommand = new PublishCommand({
+    TopicArn: process.env.REQUESTS_SNS_TOPIC_ARN,
+    MessageGroupId:  requestId,
+    Message: JSON.stringify(params)});
+
   try {
-    await sqs
-      .sendMessage({
-        QueueUrl: CREATE_REQUEST_QUEUE_URL,
-        MessageBody: JSON.stringify({
-          params,
-        }),
-      })
-      .promise();
+    await snsClient.send(snsCommand)
     return res.status(200).json(requestId);
   } catch (error) {
-    console.error("Error sending message to SQS:", error);
+    console.error("Error sending message to SNS:", error);
     return res.status(500).json({ error: "Failed to send message" });
   }
 });
