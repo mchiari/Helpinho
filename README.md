@@ -14,7 +14,7 @@ O backend inteiro está feito na AWS utilizando o framework Serverless. O usuár
 
 Tendo em vista que o projeto é relativamente simples, no meu orçamento inicial acreditei que conseguiria aprender e aplicar o Angular mas vi que é uma tecnologia bem diferente do React e, por mais que também trabalhe com a noção de componentes, tem princípios e sintaxes completamente diferentes. Eu precisaria de mais tempo do que o disponível para realizar o projeto. Sendo assim, quando percebi que demoraria mais do que o tempo que tinha disponível, escolhi não continuar. 
 
-Como ainda não tivemos nenhuma conversa, eu não sabia se valeria a pena o tempo que eu teria que investir para aprender a tecnologia e participar do processo. Sendo assim, escolhi não finalizar e enviar como está - somente o backend está "completo". Isso não significa que eu não estou disposto a aprender Angular, apenas não haveria tempo hábil dentro do prazo.
+Como ainda é a primeira etapa do processo, eu não sabia se valeria a pena o tempo que eu teria que investir para aprender a tecnologia e participar do processo. Sendo assim, escolhi não finalizar e enviar como está - somente o backend está "completo". Isso não significa que eu não estou disposto a aprender Angular, apenas não haveria tempo hábil dentro do prazo. Sei que posso contribuir com a equipe!
 
 Para executar, certificar que existem credenciais AWS válidas na máquina, navegar para backend > helpinho e rodar "npm install && serverless dev"
 
